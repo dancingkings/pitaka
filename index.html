@@ -90,6 +90,22 @@ tr+tr td{border-top:.5px solid var(--sep)}
 .field label{flex:none;width:118px;color:var(--text)}
 .field input,.field select,.field textarea{flex:1;min-width:0;border:0;background:transparent;padding:12px 0;text-align:right;outline:none;-webkit-appearance:none;appearance:none}
 .field select{text-align:right;text-align-last:right}
+.field input[type=date],.field input[type=time]{display:flex;justify-content:flex-end;text-align:right;min-height:46px}
+.field input::-webkit-date-and-time-value{text-align:right;margin:0}
+.dcal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:12px 10px}
+.dcal b{font-size:11px;color:var(--text2);text-align:center;font-weight:500;padding-bottom:2px}
+.dcal button{aspect-ratio:1/1.05;border-radius:9px;background:var(--fill);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0}
+.dcal button span{font-size:11px;color:var(--text2)}.dcal button em{font-style:normal;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.dcal button.fu{background:transparent;outline:1px dashed var(--sep)}.dcal button.fu em{color:var(--text3);font-weight:500}
+.dcal button.ov em{color:var(--red)}.dcal button.td{outline:2px solid var(--blue)}.dcal button.sel{background:var(--blue)}.dcal button.sel span,.dcal button.sel em{color:#fff}
+.sech{display:flex;justify-content:space-between;align-items:center;width:100%;font-size:13px;text-transform:uppercase;letter-spacing:.02em;color:var(--text2);padding:20px 16px 8px}
+.chev2{font-size:18px;line-height:1;transition:transform .2s;display:inline-block}.chev2.up{transform:rotate(180deg)}
+.swr{position:relative;overflow:hidden}.swr+.swr::before{content:"";position:absolute;top:0;left:16px;right:0;border-top:.5px solid var(--sep);z-index:2}
+.swdel{position:absolute;right:0;top:0;bottom:0;width:88px;background:var(--red);color:#fff;font-weight:600;font-size:15px}
+.swc{background:var(--card);transition:transform .2s;position:relative;z-index:1}
+.chart{position:relative;padding:12px 12px 8px}.chart svg{display:block;width:100%;height:auto;touch-action:pan-y}
+.chart .tip{position:absolute;top:8px;pointer-events:none;background:var(--text);color:var(--bg);font-size:12px;padding:4px 8px;border-radius:8px;white-space:nowrap;transform:translateX(-50%);display:none}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--text2);padding:0 4px 6px}.legend i{display:inline-block;width:16px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
 .field input[type=checkbox]{flex:none;width:22px;height:22px;-webkit-appearance:checkbox;appearance:auto}
 .amt{text-align:center;padding:10px 0 4px}
 .amt input{width:100%;border:0;background:transparent;text-align:center;font-size:44px;font-weight:700;outline:none;font-variant-numeric:tabular-nums}
@@ -126,7 +142,10 @@ const daysIn=m=>{const[y,mo]=m.split('-').map(Number);return new Date(y,mo,0).ge
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>{let s=String(v??'').replace(/[,₱₩\s=]/g,'').replace(/×/g,'*').replace(/÷/g,'/').replace(/[−–]/g,'-');if(!s)return 0;if(/^-?\d*\.?\d+$/.test(s))return parseFloat(s);s=s.replace(/[+\-*/.]+$/,'');if(!/^[\d.+\-*/()]+$/.test(s))return 0;try{const r=Function('"use strict";return('+s+')')();return isFinite(r)?r:0}catch(e){return 0}};
 const SYM={PHP:'₱',KRW:'₩'};
-const money=(n,cur='PHP')=>{const v=Math.round(n||0);return (v<0?'−':'')+(SYM[cur]||'')+Math.abs(v).toLocaleString('en-US')};
+const HIDE=()=>!!(S&&S.settings&&S.settings.hide);
+const money=(n,cur='PHP')=>{if(HIDE())return (SYM[cur]||'')+'•••';const v=Math.round(n||0);return (v<0?'−':'')+(SYM[cur]||'')+Math.abs(v).toLocaleString('en-US')};
+const kmoney=n=>{if(HIDE())return '•••';const v=Math.round(n||0);return Math.abs(v)>=1000?(v/1000).toFixed(v%1000===0||Math.abs(v)>=10000?0:1)+'k':String(v)};
+const isSavAcc=a=>a&&(a.kind==='savings'||a.kind==='both'),isSpendAcc=a=>a&&(a.kind==='spending'||a.kind==='both');
 const sum=(a,f=x=>x)=>a.reduce((s,x)=>s+(f(x)||0),0);
 
 /* ---------- state ---------- */
@@ -134,7 +153,46 @@ let S=null;
 const UI={tab:'today',month:mk(todayISO()),logMonth:mk(todayISO()),logAll:false,late:false};
 function blankState(){return{version:1,settings:{startMonth:mk(todayISO()),koreaStart:'2099-01',krwToPhp:0.0463},accounts:[{id:'cash',name:'Cash',currency:'PHP',kind:'spending',start:0}],envelopes:[],monthBudgets:{},moves:[],tx:[],checkins:{},goals:[],debts:[],incomes:[],costs:[],wishlist:[],stampSpends:[],backups:[]}}
 function normalize(s){const b=blankState();for(const k in b)if(s[k]==null)s[k]=b[k];s.settings=Object.assign(b.settings,s.settings);return s}
-function load(){try{const r=localStorage.getItem(KEY);return r?normalize(JSON.parse(r)):null}catch(e){return null}}
+function migrate(s){
+  if((s.version||1)<2){
+    const E=id=>s.envelopes.find(e=>e.id===id);
+    const ap=E('apple');if(ap){if(/apple/i.test(ap.name))ap.name='Subscriptions';ap.fixed=false;ap.emoji='🔁'}
+    const ld=E('load');if(ld){ld.archived=true}
+    if(s.envelopes.some(e=>e.phase==='PH')&&!E('others')){const f=E('fun');s.envelopes.push({id:'others',emoji:'📦',name:'Others',budget:1000,phase:'PH',currency:'PHP',fixed:false,daily:false,isSavings:false,isTreat:false,archived:false,order:(f?.order??10)+0.5})}
+    s.tx.forEach(t=>{if(t.envId==='load')t.envId='others'});
+    const sv=E('save');
+    if(sv){sv.name='Savings';sv.emoji='🐷';sv.budget=3500;
+      if(!E('debt'))s.envelopes.push({id:'debt',emoji:'🤝',name:'Debt repayment',budget:2500,phase:'PH',currency:'PHP',fixed:false,daily:false,isSavings:false,isDebt:true,isTreat:false,archived:false,order:(sv.order??12)+0.5});
+      if(s.settings.startMonth<='2026-10'){s.monthBudgets['2026-10']=Object.assign({},s.monthBudgets['2026-10']||{},{debt:0})}}
+    const sk=E('save_kr');if(sk)sk.name='Savings';
+    if(!s.accounts.find(a=>a.id==='locked')){const i=s.accounts.findIndex(a=>a.id==='gotyme');s.accounts.splice(i>=0?i+1:s.accounts.length,0,{id:'locked',name:'LOCKED SAVINGS (GoTyme)',currency:'PHP',kind:'savings',start:0})}
+    const acc=id=>s.accounts.find(a=>a.id===id);
+    s.tx.forEach(t=>{
+      if(t.type==='expense'&&t.envId==='save'&&!t.toAccountId)t.toAccountId='locked';
+      if(t.type==='transfer'&&!t.coverEnvId){const f=acc(t.accountId),to=acc(t.toAccountId);if(f&&to&&f.kind==='spending'&&to.kind==='savings'&&sv){t.type='expense';t.envId='save'}}
+    });
+    s.version=2;
+  }
+  if(s.version<3){
+    const A=id=>s.accounts.find(a=>a.id===id),E=id=>s.envelopes.find(e=>e.id===id);
+    let pg=A('locked');if(pg){pg.name='Piggy bank';pg.kind='savings'}else{pg={id:'locked',name:'Piggy bank',currency:'PHP',kind:'savings',start:0};s.accounts.push(pg)}
+    if(A('gotyme'))A('gotyme').kind='both';if(A('maya'))A('maya').kind='savings';
+    ['bpi','cash'].forEach(i=>{if(A(i))A(i).kind='spending'});
+    ['gcash','rcbc','maribank','kr'].forEach(i=>{if(A(i))A(i).archived=true});
+    const order=['bpi','cash','gotyme','maya','locked'];s.accounts.sort((a,b)=>{const x=order.indexOf(a.id),y=order.indexOf(b.id);return (x<0?99:x)-(y<0?99:y)});
+    ['save','debt','save_kr'].forEach(i=>{if(E(i))E(i).archived=true});
+    const o=E('others');if(o){o.isOthers=true;o.budget=0}
+    if(s.envelopes.some(e=>e.phase==='KR')&&!E('others_kr'))s.envelopes.push({id:'others_kr',emoji:'📦',name:'Others',budget:0,phase:'KR',currency:'KRW',isOthers:true,fixed:false,daily:false,archived:false,order:99});
+    s.tx.forEach(t=>{
+      if(t.type==='expense'&&(t.envId==='save'||t.envId==='save_kr')){t.type='transfer';t.toAccountId=t.toAccountId||'locked';delete t.envId}
+      if(t.type==='expense'&&t.envId==='debt')t.envId='others';
+    });
+    s.settings.saveTarget=s.settings.saveTarget||{PH:3500,KR:260000};
+    s.settings.sec=s.settings.sec||{daily:true,pace:true,stamps:true};
+    s.version=3;
+  }
+  return s}
+function load(){try{const r=localStorage.getItem(KEY);if(!r)return null;const s=migrate(normalize(JSON.parse(r)));localStorage.setItem(KEY,JSON.stringify(s));return s}catch(e){return null}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){alert('Could not save. Export a backup now.')}}
 function commit(){save();render()}
 
@@ -147,11 +205,18 @@ const phaseOf=m=>m>=S.settings.koreaStart?'KR':'PH';
 const activeEnvs=m=>S.envelopes.filter(e=>e.phase===phaseOf(m)&&!e.archived).sort((a,b)=>(a.order??0)-(b.order??0));
 const phaseCur=m=>phaseOf(m)==='KR'?'KRW':'PHP';
 function conv(n,from,to){if(from===to)return n;const r=S.settings.krwToPhp||0.0463;if(from==='KRW'&&to==='PHP')return n*r;if(from==='PHP'&&to==='KRW')return n/r;return n}
-const budgetOf=(e,m)=>{const o=S.monthBudgets[m];return(o&&o[e.id]!=null)?o[e.id]:e.budget};
+const budgetOf=(e,m)=>{if(e.isOthers)return othersBudget(m);const o=S.monthBudgets[m];return(o&&o[e.id]!=null)?o[e.id]:e.budget};
 
 /* ---------- derived ---------- */
 let D={},memo={};
-function savingsFlowPHP(t){
+const savOnly=a=>a&&a.kind==='savings';
+function savingsFlowPHP(t){if(t.type!=='transfer'||t.coverEnvId)return 0;const f=accById(t.accountId),to=accById(t.toAccountId);if(!f||!to)return 0;
+  if(!savOnly(f)&&savOnly(to))return conv(t.amount,f.currency,'PHP');if(savOnly(f)&&!savOnly(to))return -conv(t.amount,f.currency,'PHP');return 0}
+const saveTarget=m=>num((S.settings.saveTarget||{})[phaseOf(m)]);
+const savedIn=m=>conv(D.dep[m]||0,'PHP',phaseCur(m));
+function monthIncome(m){const cur=phaseCur(m),rec=received();return sum(S.tx.filter(t=>t.type==='income'&&mk(t.date)===m),t=>conv(t.amount,accCur(t.accountId),cur))+sum(S.incomes.filter(i=>!rec.has(i.id)&&mk(i.date)===m),i=>conv(num(i.amount),i.currency||'PHP',cur))}
+function othersBudget(m){return Math.max(0,monthIncome(m)-sum(activeEnvs(m).filter(e=>!e.isOthers&&!e.isSavings),e=>budgetOf(e,m))-saveTarget(m))}
+function _oldFlow(t){
   if(t.type==='transfer'){const f=accById(t.accountId),to=accById(t.toAccountId);if(!f||!to)return 0;
     if(f.kind==='spending'&&to.kind==='savings')return conv(t.amount,f.currency,'PHP');
     if(f.kind==='savings'&&to.kind==='spending')return -conv(t.amount,f.currency,'PHP');return 0}
@@ -163,7 +228,7 @@ function derive(){
   S.accounts.forEach(a=>bal[a.id]=num(a.start));
   for(const t of S.tx){
     const m=mk(t.date),a=t.amount;
-    if(t.type==='expense'||t.type==='debtpay'){if(t.accountId in bal)bal[t.accountId]-=a}
+    if(t.type==='expense'||t.type==='debtpay'){if(t.accountId in bal)bal[t.accountId]-=a;if(t.type==='expense'&&t.toAccountId&&envById(t.envId)?.isSavings&&t.toAccountId in bal)bal[t.toAccountId]+=conv(a,accCur(t.accountId),accCur(t.toAccountId))}
     else if(t.type==='income'||t.type==='adjust'){if(t.accountId in bal)bal[t.accountId]+=a}
     else if(t.type==='transfer'){if(t.accountId in bal)bal[t.accountId]-=a;if(t.toAccountId in bal)bal[t.toAccountId]+=conv(a,accCur(t.accountId),accCur(t.toAccountId))}
     if(t.type==='expense'&&t.envId){const e=envById(t.envId);if(e)add(spent,m+'|'+e.id,conv(a,accCur(t.accountId),e.currency))}
@@ -173,11 +238,12 @@ function derive(){
   for(const mv of S.moves){add(moves,mv.month+'|'+mv.to,mv.amount);if(mv.from)add(moves,mv.month+'|'+mv.from,-mv.amount)}
   D={spent,dep,cover,moves,dips,bal};
 }
-function spentOf(e,m){if(e.isSavings)return conv(D.dep[m]||0,'PHP',e.currency)+(D.spent[m+'|'+e.id]||0);return D.spent[m+'|'+e.id]||0}
+function spentOf(e,m){return D.spent[m+'|'+e.id]||0}
 function carryOf(e,m){if(m<=S.settings.startMonth)return 0;const pm=addM(m,-1);if(phaseOf(pm)!==e.phase)return 0;const v=avail(e,pm);return e.isSavings?Math.max(0,v):v}
 function avail(e,m){const k=e.id+m;if(k in memo)return memo[k];memo[k]=0;
   const v=budgetOf(e,m)+carryOf(e,m)+(D.moves[m+'|'+e.id]||0)+(D.cover[m+'|'+e.id]||0)-spentOf(e,m);memo[k]=v;return v}
-const totalPHP=()=>sum(S.accounts,a=>conv(D.bal[a.id]||0,a.currency,'PHP'));
+const liveAccs=()=>S.accounts.filter(a=>!a.archived);
+const totalPHP=()=>sum(liveAccs(),a=>conv(D.bal[a.id]||0,a.currency,'PHP'));
 const received=()=>new Set(S.tx.filter(t=>t.incomeId).map(t=>t.incomeId));
 const paidCosts=()=>new Set(S.tx.filter(t=>t.costId).map(t=>t.costId));
 function debtOwed(d){return num(d.start)+sum(S.tx.filter(t=>t.type==='income'&&t.debtId===d.id),t=>t.amount)-sum(S.tx.filter(t=>t.type==='debtpay'&&t.debtId===d.id),t=>t.amount)}
@@ -189,7 +255,8 @@ function logDays(){const s=new Set();S.tx.forEach(t=>{if(t.type!=='adjust')s.add
 const expenseDays=()=>new Set(S.tx.filter(t=>t.type==='expense').map(t=>t.date));
 function monthClean(m){
   if(D.dips[m])return false;
-  for(const e of activeEnvs(m)){const v=avail(e,m);if(e.isSavings){if(v>0.5)return false}else if(v<-0.5)return false}
+  if(saveTarget(m)>0&&savedIn(m)<saveTarget(m)-0.5)return false;
+  for(const e of activeEnvs(m)){const v=avail(e,m);if(!e.isSavings&&!e.isDebt&&v<-0.5)return false}
   return true}
 function isoWeek(iso){const[y,m,d]=iso.split('-').map(Number);const dt=new Date(Date.UTC(y,m-1,d));const day=dt.getUTCDay()||7;dt.setUTCDate(dt.getUTCDate()+4-day);const y0=new Date(Date.UTC(dt.getUTCFullYear(),0,1));return dt.getUTCFullYear()+'-'+Math.ceil(((dt-y0)/864e5+1)/7)}
 function stampLedger(){
@@ -198,8 +265,8 @@ function stampLedger(){
   for(const d in S.checkins)if(S.checkins[d]==='nospend'&&!exp.has(d))L.push({date:d,n:1,why:'No-spend day'});
   for(const t of S.tx){
     const sf=savingsFlowPHP(t);
-    if(t.type==='transfer'&&sf>0){const n=Math.floor(sf/1000);if(n)L.push({date:t.date,n,why:'Savings deposit'})}
-    if(t.type==='expense'&&envById(t.envId)?.isSavings){const n=Math.floor(conv(t.amount,accCur(t.accountId),'PHP')/1000);if(n)L.push({date:t.date,n,why:'Debt repayment'})}
+    if(t.type==='transfer'&&sf>0){const n=Math.floor(sf/1000);if(n)L.push({date:t.date,n,why:'Savings'})}
+    if(t.type==='expense'){const e=envById(t.envId);if(e&&(e.isSavings||e.isDebt)){const n=Math.floor(conv(t.amount,accCur(t.accountId),'PHP')/1000);if(n)L.push({date:t.date,n,why:e.isSavings?'Savings':'Debt repayment'})}}
     if(t.type==='debtpay'){const n=Math.floor(conv(t.amount,accCur(t.accountId),'PHP')/1000);if(n)L.push({date:t.date,n,why:'Debt payment'})}
   }
   const cur=mk(todayISO());
@@ -208,10 +275,10 @@ function stampLedger(){
   return L.sort((a,b)=>b.date.localeCompare(a.date))}
 function stampBalance(){return sum(stampLedger(),x=>x.n)-sum(S.stampSpends,x=>x.n)}
 function streak(){const days=logDays();let d=new Date();const iso=x=>`${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`;if(!days.has(iso(d)))d.setDate(d.getDate()-1);let n=0;while(days.has(iso(d))){n++;d.setDate(d.getDate()-1)}return n}
-const wishCost=w=>Math.max(1,Math.ceil(num(w.price)/100));
+const wishCost=w=>num(w.stamps)>0?Math.round(num(w.stamps)):Math.max(1,Math.ceil(num(w.price)/100));
 function onTrack(){
-  const m=mk(todayISO()),why=[];const se=savingsEnv(m);
-  if(se&&avail(se,m)>0.5)why.push(`Finish this month's ${se.name} (${money(avail(se,m),se.currency)} to go)`);
+  const m=mk(todayISO()),why=[];const tg=saveTarget(m),sv=savedIn(m);
+  if(tg>0&&sv<tg-0.5)why.push(`Save ${money(tg-sv,phaseCur(m))} more this month`);
   if(D.dips[m])why.push('You took from savings this month');
   return{ok:!why.length,why}}
 function wishStatus(w){
@@ -228,7 +295,7 @@ function forecast(late){
   for(let m=cur;m<=end;m=addM(m,1)){
     let inn=0,out=0;
     for(const i of S.incomes){if(rec.has(i.id))continue;let im=mk(i.date);if(late&&i.kind==='tranche')im=addM(im,2);if(im<cur)im=cur;if(im===m)inn+=conv(num(i.amount),i.currency||'PHP','PHP');if(m===cur&&im>end)dropped++}
-    for(const e of activeEnvs(m)){if(e.isSavings)continue;const v=m===cur?Math.max(0,avail(e,m)):budgetOf(e,m);out+=conv(v,e.currency,'PHP')}
+    for(const e of activeEnvs(m)){if(e.isSavings||e.isOthers)continue;const v=m===cur?Math.max(0,avail(e,m)):budgetOf(e,m);out+=conv(v,e.currency,'PHP')}
     bal+=inn-out;rows.push({m,inn,out,bal});if(bal<low.v)low={v:bal,m};
   }
   return{rows,low,dropped}}
@@ -239,6 +306,8 @@ const IC={
  budget:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>',
  rewards:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg>',
  plan:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 5-6"/></svg>',
+ eye:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+ eyeoff:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7c1.9 0 3.5-.6 4.9-1.4M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
  gear:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'};
 
 /* ---------- render ---------- */
@@ -260,44 +329,65 @@ function welcome(){return `<div class="hero"><img class="ic" src="icon-180.png" 
 
 function txLine(t){
   const acc=accById(t.accountId),to=accById(t.toAccountId);let title=t.desc,sub='',amt=money(t.amount,acc?.currency),cls='';
-  if(t.type==='expense'){const e=envById(t.envId),c=S.costs.find(c=>c.id===t.costId);title=title||e?.name||c?.name||'Expense';sub=[e?e.name:(c?'Planned: '+c.name:''),acc?.name].filter(Boolean).join(' · ');amt='−'+amt}
+  if(t.type==='expense'){const e=envById(t.envId),c=S.costs.find(c=>c.id===t.costId);title=title||e?.name||c?.name||'Expense';sub=[e?e.name:(c?'Planned: '+c.name:''),acc?.name+(e?.isSavings&&to?' → '+to.name:'')].filter(Boolean).join(' · ');amt=(e?.isSavings?'':'−')+amt;if(e?.isSavings)cls='muted'}
   else if(t.type==='income'){title=title||'Income';sub='Income → '+(acc?.name||'');amt='+'+amt;cls='pos'}
-  else if(t.type==='transfer'){const sf=savingsFlowPHP(t);title=title||(sf>0?'Savings deposit':sf<0?'Savings withdrawal':'Transfer');sub=`${acc?.name||'?'} → ${to?.name||'?'}`+(t.coverEnvId?' · covered '+(envById(t.coverEnvId)?.name||''):'')}
+  else if(t.type==='transfer'){const sf=savingsFlowPHP(t);title=title||(sf>0?'Savings':sf<0?'Savings withdrawal':'Transfer');sub=`${acc?.name||'?'} → ${to?.name||'?'}`+(t.coverEnvId?' · covered '+(envById(t.coverEnvId)?.name||''):'')}
   else if(t.type==='debtpay'){title=title||('Paid '+(debtById(t.debtId)?.name||'debt'));sub='Debt payment · '+(acc?.name||'');amt='−'+amt}
   else if(t.type==='adjust'){title='Balance update';sub=acc?.name||'';amt=(t.amount>=0?'+':'')+money(t.amount,acc?.currency)}
   if(t.time)sub+=' · '+t.time;
   return `<button class="row" data-act="editTx" data-v="${t.id}"><div class="main"><div class="t">${esc(title)}</div><div class="s">${esc(sub)}</div></div><div class="r num ${cls}">${amt}</div></button>`}
 
+const dayEnvs=m=>activeEnvs(m).filter(e=>!e.fixed&&!e.isSavings&&!e.isDebt&&!e.isOthers);
+function dailyInfo(m){
+  const envs=dayEnvs(m),ids=new Set(envs.map(e=>e.id)),cur=phaseCur(m),t=todayISO(),tm=mk(t),n=daysIn(m);
+  const spent={};S.tx.forEach(x=>{if(x.type==='expense'&&mk(x.date)===m&&ids.has(x.envId))add(spent,x.date,conv(x.amount,accCur(x.accountId),cur))});
+  const base=sum(envs,e=>budgetOf(e,m))/n;let allow=base;
+  if(m===tm){const left=sum(envs,e=>avail(e,m)),td=Number(t.slice(8));allow=Math.max(0,(left+(spent[t]||0))/(n-td+1))}
+  return{spent,base,allow,cur,n,envs}}
+function sec(k,title,body){const open=(S.settings.sec||{})[k]!==false;return `<button class="sech" data-act="sec" data-v="${k}"><span>${title}</span><span class="chev2 ${open?'up':''}">⌄</span></button>${open?body:''}`}
 function vToday(){
-  const m=UI.logMonth,cur=phaseCur(m),all=UI.logAll;
-  const envs=activeEnvs(m).filter(e=>!e.isSavings);
-  const isSavEnv=id=>!!envById(id)?.isSavings;
-  const spent=sum(S.tx.filter(t=>t.type==='expense'&&mk(t.date)===m&&!isSavEnv(t.envId)),t=>conv(t.amount,accCur(t.accountId),cur));
+  const m=UI.logMonth,cur=phaseCur(m),all=UI.logAll,nb=!!S.settings.noBills,t=todayISO();
+  const inScope=e=>e&&!e.isSavings&&!(nb&&e.fixed);
+  const envs=activeEnvs(m).filter(inScope);
+  const spent=sum(S.tx.filter(x=>x.type==='expense'&&mk(x.date)===m&&(x.envId?inScope(envById(x.envId)):true)),x=>conv(x.amount,accCur(x.accountId),cur));
   const budget=sum(envs,e=>budgetOf(e,m));const pct=budget>0?Math.min(100,spent/budget*100):0;
-  const list=S.tx.filter(t=>mk(t.date)===m&&(all||t.type==='expense'||t.type==='debtpay')).sort((a,b)=>(b.date+(b.time||'99')).localeCompare(a.date+(a.time||'99')));
-  const days=[...new Set(list.map(t=>t.date))];
-  const dayTotal=d=>sum(list.filter(t=>t.date===d&&t.type==='expense'),t=>conv(t.amount,accCur(t.accountId),cur));
-  return `<div class="top"><h1>Expenses</h1><button data-act="settings" class="btn" aria-label="Settings">${IC.gear}</button></div>
+  let list=S.tx.filter(x=>mk(x.date)===m&&(all||x.type==='expense'||x.type==='debtpay'));
+  if(UI.logDay&&mk(UI.logDay)===m)list=list.filter(x=>x.date===UI.logDay);
+  list.sort((a,b)=>(b.date+(b.time||'99')).localeCompare(a.date+(a.time||'99')));
+  const days=[...new Set(list.map(x=>x.date))];
+  const di=dailyInfo(m);const[y,mo]=m.split('-').map(Number);const first=new Date(y,mo-1,1).getDay();
+  let cal='<b>S</b><b>M</b><b>T</b><b>W</b><b>T</b><b>F</b><b>S</b>'+'<i></i>'.repeat(first);
+  for(let d=1;d<=di.n;d++){const iso=m+'-'+pad(d),sp=di.spent[iso]||0,fut=iso>t,isT=iso===t;
+    const lim=isT?di.allow:di.base;const cls=[fut?'fu':'',isT?'td':'',!fut&&sp>lim+0.5?'ov':'',UI.logDay===iso?'sel':''].join(' ');
+    cal+=`<button class="${cls}" data-act="day" data-v="${iso}"><span>${d}</span><em>${fut?kmoney(di.allow):(sp?kmoney(sp):'–')}</em></button>`}
+  return `<div class="top"><h1>Expenses</h1><div style="display:flex;gap:14px"><button data-act="hide" class="btn" aria-label="Hide numbers">${HIDE()?IC.eyeoff:IC.eye}</button><button data-act="settings" class="btn" aria-label="Settings">${IC.gear}</button></div></div>
   <div class="monthnav"><button data-act="lPrev">‹</button><b>${mLabel(m,1)}</b><button data-act="lNext">›</button></div>
-  <div class="card pad"><div class="sub">Spent in ${MNL[Number(m.slice(5))-1]}</div><div class="big ${spent>budget?'neg':''}">${money(spent,cur)}</div>
+  <div class="card pad"><div class="sub">Spent in ${MNL[mo-1]}${nb?' (without fixed bills)':''}</div><div class="big ${spent>budget?'neg':''}">${money(spent,cur)}</div>
    <div class="bar ${spent>budget?'over':''}"><i style="width:${pct}%"></i></div>
-   <div class="sub" style="margin-top:6px">of ${money(budget,cur)} total monthly budget (savings not included)</div></div>
+   <div class="sub" style="margin-top:6px">of ${money(budget,cur)} budgeted${nb?' (no rent, utilities, internet)':''}. Savings not included.</div>
+   <div class="seg" style="margin:12px 0 0"><button class="${nb?'':'on'}" data-act="noBills" data-v="0">All expenses</button><button class="${nb?'on':''}" data-act="noBills" data-v="1">Without fixed bills</button></div></div>
+  ${sec('daily','Daily spending',`<div class="card"><div class="dcal">${cal}</div><div class="note" style="margin:0 16px 12px">Daily budget: ${money(di.allow,cur)}. Red = over.</div></div>`)}
   <div class="seg" style="margin-top:14px"><button class="${all?'':'on'}" data-act="logAll" data-v="0">Expenses</button><button class="${all?'on':''}" data-act="logAll" data-v="1">All activity</button></div>
-  ${days.map(d=>`<h2 style="display:flex;justify-content:space-between;margin-top:14px"><span>${dLabel(d)}</span></h2><div class="card">${list.filter(t=>t.date===d).map(txLine).join('')}</div>`).join('')||`<div class="card" style="margin-top:4px"><div class="empty">${all?'No activity':'No expenses'} in ${mLabel(m,1)}. Tap + to log one.</div></div>`}`}
+  ${UI.logDay&&mk(UI.logDay)===m?`<div class="note" style="margin:0 4px 6px">Showing ${dLabel(UI.logDay)} · <button class="btn" style="font-size:13px" data-act="day" data-v="${UI.logDay}">Show all days</button></div>`:''}
+  ${days.map(d=>`<h2 style="margin-top:14px">${dLabel(d)}</h2><div class="card">${list.filter(x=>x.date===d).map(txLine).join('')}</div>`).join('')||`<div class="card" style="margin-top:4px"><div class="empty">${all?'No activity':'No expenses'} ${UI.logDay&&mk(UI.logDay)===m?'on this day':'in '+mLabel(m,1)}. Tap + to log one.</div></div>`}`}
 
 function vBudget(){
   const m=UI.month,envs=activeEnvs(m),cur=phaseCur(m);
-  const spend=envs.filter(e=>!e.isSavings);
+  const spend=envs.filter(e=>!e.isSavings);const chart=m<=mk(todayISO())?paceChart(m):'';
   const tb=sum(spend,e=>budgetOf(e,m)),ts=sum(spend,e=>spentOf(e,m)),tl=sum(spend,e=>avail(e,m));
+  const tg=saveTarget(m),sv=savedIn(m);
   const row=e=>{const a=avail(e,m),sp=spentOf(e,m),tot=budgetOf(e,m)+carryOf(e,m)+(D.moves[m+'|'+e.id]||0)+(D.cover[m+'|'+e.id]||0);
     const pct=tot>0?Math.min(100,sp/tot*100):(sp>0?100:0);
-    const s=e.isSavings?`${money(sp,e.currency)} of ${money(tot,e.currency)} saved/repaid`:`${money(sp,e.currency)} spent of ${money(tot,e.currency)}`;
-    return `<button class="row chev" data-act="env" data-v="${e.id}"><div class="emo">${e.emoji||'•'}</div><div class="main"><div class="t">${esc(e.name)}${e.fixed?' <span class="pill">fixed</span>':''}</div><div class="s">${s}</div>${e.daily&&m===mk(todayISO())&&a>0?`<div class="s">${money(a/(daysIn(m)-Number(todayISO().slice(8))+1),e.currency)}/day for the rest of the month</div>`:''}<div class="bar ${e.isSavings?'good':(a<0?'over':'')}"><i style="width:${pct}%"></i></div></div><div class="r num ${a<0&&!e.isSavings?'neg':''}">${e.isSavings?(a<=0.5?'Done':money(a,e.currency)+'<div class="s">to go</div>'):money(a,e.currency)+'<div class="s">left</div>'}</div></button>`};
+    const s=e.isOthers?`${money(sp,e.currency)} spent of ${money(tot,e.currency)} leftover`:`${money(sp,e.currency)} spent of ${money(tot,e.currency)}`;
+    return `<button class="row chev" data-act="env" data-v="${e.id}"><div class="emo">${e.emoji||'•'}</div><div class="main"><div class="t">${esc(e.name)}${e.fixed?' <span class="pill">fixed</span>':''}</div><div class="s">${s}</div>${e.daily&&m===mk(todayISO())&&a>0?`<div class="s">${money(a/(daysIn(m)-Number(todayISO().slice(8))+1),e.currency)}/day</div>`:''}<div class="bar ${e.isSavings?'good':(a<0?'over':'')}"><i style="width:${pct}%"></i></div></div><div class="r num ${a<0&&!e.isSavings?'neg':''}">${e.isSavings?(a<=0.5?'Done':money(a,e.currency)+'<div class="s">to go</div>'):money(a,e.currency)+'<div class="s">left</div>'}</div></button>`};
   return `<div class="top"><h1>Budget</h1><button class="btn" data-act="move">Move money</button></div>
   <div class="monthnav"><button data-act="mPrev">‹</button><b>${mLabel(m,1)}${phaseOf(m)==='KR'?' <span class="pill b">Korea</span>':''}</b><button data-act="mNext">›</button></div>
   <div class="grid2"><div class="stat"><div class="l">Budgeted</div><div class="v">${money(tb,cur)}</div></div><div class="stat"><div class="l">Left</div><div class="v ${tl<0?'neg':''}">${money(tl,cur)}</div></div></div>
   <div class="note" style="margin:6px 4px 0">Spent ${money(ts,cur)} · leftovers roll over to next month</div>
-  <h2>Envelopes</h2><div class="card">${envs.map(row).join('')||'<div class="empty">No envelopes for this phase.</div>'}</div>
+  ${tg>0?`<div class="card" style="margin-top:12px"><div class="row"><div class="emo">${sv>=tg-0.5?'✅':'🐷'}</div><div class="main"><div class="t">Savings</div><div class="s">${money(sv,cur)} of ${money(tg,cur)} moved to savings</div><div class="bar good"><i style="width:${Math.min(100,tg?sv/tg*100:0)}%"></i></div></div></div></div>`:''}
+  ${chart}
+  <h2>Envelopes</h2><div class="card">${envs.filter(e=>!e.isOthers).map(row).join('')||'<div class="empty">No envelopes for this phase.</div>'}</div>
+  ${envs.filter(e=>e.isOthers).length?`<h2>Others</h2><div class="card">${envs.filter(e=>e.isOthers).map(row).join('')}</div><div class="note">Leftover = this month's income − envelopes − savings. Spending here comes out of your forecast.</div>`:''}
   <button class="btns" data-act="addEnt" data-v="env">Add envelope</button>`}
 
 function vRewards(){
@@ -311,26 +401,26 @@ function vRewards(){
   return `<div class="top"><h1>Rewards</h1></div>
   <div class="grid2" style="margin-top:8px"><div class="stat"><div class="l">Stamps</div><div class="v">⭐ ${bal}</div></div><div class="stat"><div class="l">Streak</div><div class="v">${sk} day${sk===1?'':'s'}</div></div></div>
   <div class="card" style="margin-top:12px"><div class="row"><div class="emo">${days.has(t)?'✅':'📝'}</div><div class="main"><div class="t">${days.has(t)?'Today is stamped':'Today isn\'t stamped yet'}</div><div class="s">${days.has(t)?'Come back tomorrow to keep your streak.':'Log an expense, or tap if you spent nothing.'}</div></div>${days.has(t)?'':'<button class="pill g" style="font-size:14px;padding:6px 12px" data-act="nospend">I spent nothing</button>'}</div></div>
-  <h2>${MNL[mo-1]} stamp card</h2><div class="card"><div class="cal">${cal}</div><div class="note" style="margin:0 16px 12px">Blue = logged · Green = no-spend day</div></div>
+  ${sec('stamps',MNL[mo-1]+' stamp card',`<div class="card"><div class="cal">${cal}</div><div class="note" style="margin:0 16px 12px">Blue = logged · Green = no-spend day</div></div>`)}
   <h2>Wishlist</h2><div class="card"><div class="row"><div class="emo">${tr.ok?'🟢':'🔒'}</div><div class="main"><div class="t">${tr.ok?'On track this month':'Wishlist locked'}</div><div class="s" style="white-space:normal">${tr.ok?'Items unlock once you have the stamps and the Fun & treats money.':tr.why.map(esc).join(' · ')}</div></div></div></div>
-  <div class="card" style="margin-top:10px">${open.map(w=>{const s=wishStatus(w);return `<div class="row"><div class="emo">${s.ok?'🎁':'🔒'}</div><button class="main" style="text-align:left" data-act="editEnt" data-k="wish" data-v="${w.id}"><div class="t">${esc(w.name)}${(w.qty||1)>1?` <span class="pill">×${w.qty}</span>`:''}</div><div class="s">${money(w.price)} · ⭐ ${s.cost}${w.target?' · by '+mLabel(w.target):''}</div>${s.ok?'':`<div class="s warn" style="white-space:normal">${s.why.slice(0,2).map(esc).join(' · ')}</div>`}</button>${s.ok?`<button class="pill b" style="font-size:14px;padding:6px 12px" data-act="buy" data-v="${w.id}">Get it</button>`:`<button class="s" style="color:var(--text3)" data-act="buyAnyway" data-v="${w.id}">bought anyway</button>`}</div>`}).join('')||'<div class="empty">Add something you want. You will earn it.</div>'}</div>
+  <div class="card" style="margin-top:10px">${open.map(w=>{const s=wishStatus(w);return `<div class="swr"><button class="swdel" data-act="swDel" data-k="wish" data-v="${w.id}">Delete</button><div class="swc row"><div class="emo">${s.ok?'🎁':'🔒'}</div><button class="main" style="text-align:left" data-act="editEnt" data-k="wish" data-v="${w.id}"><div class="t">${esc(w.name)}${(w.qty||1)>1?` <span class="pill">×${w.qty}</span>`:''}</div><div class="s">${money(w.price)} · ⭐ ${s.cost}${w.target?' · by '+mLabel(w.target):''} · tap to edit</div>${s.ok?'':`<div class="s warn" style="white-space:normal">${s.why.slice(0,2).map(esc).join(' · ')}</div>`}</button>${s.ok?`<button class="pill b" style="font-size:14px;padding:6px 12px" data-act="buy" data-v="${w.id}">Get it</button>`:`<button class="s" style="color:var(--text3)" data-act="buyAnyway" data-v="${w.id}">bought anyway</button>`}</div></div>`}).join('')||'<div class="empty">Add something you want. You will earn it.</div>'}</div>
   <button class="btns" data-act="addEnt" data-v="wish">Add wish</button>
   ${done.length?`<h2>Got it</h2><div class="card">${done.map(w=>`<button class="row" data-act="editEnt" data-k="wish" data-v="${w.id}"><div class="emo">✅</div><div class="main"><div class="t" style="text-decoration:line-through;color:var(--text2)">${esc(w.name)}</div><div class="s">${w.boughtDate?dShort(w.boughtDate):''}${w.boughtPrice?' · '+money(w.boughtPrice):''}</div></div></button>`).join('')}</div>`:''}
   <h2>How to earn stamps</h2><div class="card">
-   ${[['📝','Log anything today','+1'],['🌿','Tap “I spent nothing” on a no-spend day','+1 more'],['🐷','Savings deposit','+1 per ₱1,000'],['🤝','Debt payment','+1 per ₱1,000'],['🏆','Month with no envelope overspent, savings done, no dips','+10'],['💾','Weekly backup','+1']].map(r=>`<div class="row"><div class="emo">${r[0]}</div><div class="main"><div class="t" style="white-space:normal">${r[1]}</div></div><div class="r muted">${r[2]}</div></div>`).join('')}
-  </div><div class="note">Each wish costs 1 stamp per ₱100 of its price.</div>
+   ${[['📝','Log anything today','+1'],['🌿','Tap “I spent nothing” on a no-spend day','+1 more'],['🐷','Move money into Piggy bank or Maya','+1 per ₱1,000'],['🏆','Month with no envelope overspent and savings done','+10'],['💾','Weekly backup','+1']].map(r=>`<div class="row"><div class="emo">${r[0]}</div><div class="main"><div class="t" style="white-space:normal">${r[1]}</div></div><div class="r muted">${r[2]}</div></div>`).join('')}
+  </div><div class="note">Each wish costs 1 stamp per ₱100 of its price unless you set its stamps. Swipe a wish left to delete it.</div>
   ${led.length?`<h2>Recent stamps</h2><div class="card">${led.map(l=>`<div class="row"><div class="main"><div class="t">${esc(l.why)}</div><div class="s">${dShort(l.date)}</div></div><div class="r pos">+${l.n}</div></div>`).join('')}</div>`:''}`}
 
 function vPlan(){
   const f=forecast(UI.late),rec=received(),paid=paidCosts();
   const tot=totalPHP();
-  const accRow=a=>`<button class="row chev" data-act="editEnt" data-k="acc" data-v="${a.id}"><div class="main"><div class="t">${esc(a.name)} ${a.kind==='savings'?'<span class="pill">savings</span>':''}</div></div><div class="r num">${money(D.bal[a.id],a.currency)}</div></button>`;
+  const accRow=a=>`<button class="row chev" data-act="editEnt" data-k="acc" data-v="${a.id}"><div class="main"><div class="t">${esc(a.name)} ${a.kind==='savings'?'<span class="pill">savings</span>':a.kind==='both'?'<span class="pill">spend + save</span>':''}</div></div><div class="r num">${money(D.bal[a.id],a.currency)}</div></button>`;
   const incs=[...S.incomes].sort((a,b)=>a.date.localeCompare(b.date));
   const costs=[...S.costs].sort((a,b)=>a.date.localeCompare(b.date));
   const groups=[...new Set(costs.map(c=>c.group||'Other'))];
-  return `<div class="top"><h1>Plan</h1></div>
-  <div class="card pad" style="margin-top:8px"><div class="sub">All your money now</div><div class="big">${money(tot)}</div><div class="sub">across ${S.accounts.length} accounts${S.accounts.some(a=>a.currency==='KRW')?' (₩ converted at '+S.settings.krwToPhp+')':''}</div></div>
-  <div class="card" style="margin-top:10px">${S.accounts.map(accRow).join('')}</div>
+  return `<div class="top"><h1>Plan</h1><button data-act="hide" class="btn" aria-label="Hide numbers">${HIDE()?IC.eyeoff:IC.eye}</button></div>
+  <div class="card pad" style="margin-top:8px"><div class="sub">All your money now</div><div class="big">${money(tot)}</div><div class="sub">across ${liveAccs().length} accounts${liveAccs().some(a=>a.currency==='KRW')?' (₩ converted at '+S.settings.krwToPhp+')':''}</div></div>
+  <div class="card" style="margin-top:10px">${liveAccs().map(accRow).join('')}</div>
   <button class="btnp" data-act="balances">Update balances</button>
   <button class="btns" data-act="addEnt" data-v="acc">Add account</button>
 
@@ -339,12 +429,12 @@ function vPlan(){
    <table><tr><th>Month</th><th>In</th><th>Out</th><th>End</th></tr>
    ${f.rows.map(r=>`<tr><td>${MN[Number(r.m.slice(5))-1]} ’${r.m.slice(2,4)}${phaseOf(r.m)==='KR'?' 🇰🇷':''}</td><td class="pos">${r.inn?'+'+money(r.inn):'–'}</td><td>${money(r.out)}</td><td class="${r.bal<0?'neg':''}"><b>${money(r.bal)}</b></td></tr>`).join('')}
    </table></div>
-  <div class="note">Lowest point: <b class="${f.low.v<0?'neg':''}">${money(f.low.v)}</b> in ${mLabel(f.low.m)}. “Out” = envelope budgets (not savings). One-time costs are not included. Money moved to savings stays in your total.${UI.late&&f.dropped?' Some tranches fall after this window.':''}</div>
+  <div class="note">Lowest point: <b class="${f.low.v<0?'neg':''}">${money(f.low.v)}</b> in ${mLabel(f.low.m)}. “Out” = envelope budgets. Spending in Others lowers your money now, so every month after drops too.${UI.late&&f.dropped?' Some tranches fall after this window.':''}</div>
 
-  <h2>Expected income</h2><div class="card">${incs.map(i=>{const r=rec.has(i.id);return `<div class="row"><button class="main" style="text-align:left" data-act="editEnt" data-k="income" data-v="${i.id}"><div class="t">${esc(i.name)}</div><div class="s">${dShort(i.date)} · ${esc(accById(i.accountId)?.name||'')}${i.kind==='tranche'?' · tranche':''}</div></button><div class="r"><div class="num ${r?'muted':'pos'}">${money(i.amount,i.currency)}</div>${r?'<div class="s">✓ received</div>':`<button class="btn" style="font-size:14px" data-act="recv" data-v="${i.id}">Got it</button>`}</div></div>`}).join('')||'<div class="empty">No expected income</div>'}</div>
+  <h2>Expected income</h2><div class="card">${incs.map(i=>{const r=rec.has(i.id);return `<div class="row"><button class="main" style="text-align:left" data-act="editEnt" data-k="income" data-v="${i.id}"><div class="t">${esc(i.name)}</div><div class="s">${dShort(i.date)} · ${esc(accById(i.accountId)?.name||'')}${i.kind==='tranche'?' · tranche':''}</div></button><div class="r"><div class="num ${r?'muted':'pos'}">${money(i.amount,i.currency)}</div>${r?'<div class="s">✓ received</div>':`<button class="btn" style="font-size:14px" data-act="recv" data-v="${i.id}">Log actual</button>`}</div></div>`}).join('')||'<div class="empty">No expected income</div>'}</div>
   <button class="btns" data-act="addEnt" data-v="income">Add expected income</button>
 
-  <h2>Goals</h2><div class="card">${S.goals.map(g=>{const a=accById(g.accountId);const v=a?conv(D.bal[a.id]||0,a.currency,'PHP'):0;const p=g.target?Math.min(100,v/g.target*100):0;return `<button class="row chev" data-act="editEnt" data-k="goal" data-v="${g.id}"><div class="main"><div class="t">${esc(g.name)}</div><div class="s">${money(v)} of ${money(g.target)} · in ${esc(a?.name||'—')}</div><div class="bar good"><i style="width:${p}%"></i></div></div><div class="r num">${Math.round(p)}%</div></button>`}).join('')||'<div class="empty">No goals</div>'}</div>
+  <h2>Goals</h2><div class="card">${S.goals.map(g=>{const a=accById(g.accountId);const v=a?conv(D.bal[a.id]||0,a.currency,'PHP'):0;const p=g.target?Math.min(100,v/g.target*100):0;return `<div class="swr"><button class="swdel" data-act="swDel" data-k="goal" data-v="${g.id}">Delete</button><button class="swc row chev" data-act="editEnt" data-k="goal" data-v="${g.id}"><div class="main"><div class="t">${esc(g.name)}</div><div class="s">${money(v)} of ${money(g.target)} · in ${esc(a?.name||'—')}</div><div class="bar good"><i style="width:${p}%"></i></div></div><div class="r num">${Math.round(p)}%</div></button></div>`}).join('')||'<div class="empty">No goals</div>'}</div><div class="note">Tap a goal to edit. Swipe left to delete.</div>
   <button class="btns" data-act="addEnt" data-v="goal">Add goal</button>`}
 
 /* ---------- sheets ---------- */
@@ -355,29 +445,30 @@ function openSheet(title,body,{right=''}={}){
 function closeSheet(){$('#sheet-root').innerHTML='';document.body.style.overflow=''}
 function toast(msg){const d=document.createElement('div');d.className='toast';d.textContent=msg;document.body.appendChild(d);setTimeout(()=>d.remove(),1800)}
 const opt=(v,l,sel)=>`<option value="${esc(v)}" ${String(v)===String(sel)?'selected':''}>${esc(l)}</option>`;
-const accOpts=(sel,filter=()=>true)=>S.accounts.filter(filter).map(a=>opt(a.id,a.name+(a.currency==='KRW'?' (₩)':''),sel)).join('');
+const accOpts=(sel,filter=()=>true)=>S.accounts.filter(a=>(!a.archived&&filter(a))||a.id===sel).map(a=>opt(a.id,a.name+(a.currency==='KRW'?' (₩)':''),sel)).join('');
 const F=(label,inner)=>`<div class="field"><label>${label}</label>${inner}</div>`;
 
-let lastAcc=null,lastEnv=null;
+let lastAcc=null,lastEnv=null,lastSaveTo=null;
 function txSheet(type,t){
   const isNew=!t||!t.id;t=t||{type,date:todayISO(),time:nowTime(),amount:'',desc:'',accountId:lastAcc||S.accounts[0]?.id};
   type=t.type;const m=mk(t.date);
-  const segs=[['expense','Spend'],['income','Income'],['save','Save'],['transfer','Move $']];
-  const segKey=type==='transfer'&&isNew&&t._save?'save':type;
+  const segs=[['expense','Spend'],['income','Income'],['transfer','Move $']];
+  const segKey=type;
   let fields='';
   const dt=F('Date',`<input type="date" name="date" value="${t.date}" required>`)+F('Time',`<input type="time" name="time" value="${t.time||''}" placeholder="optional">`);
   if(type==='expense'){
     const envs=activeEnvs(m);
     fields=F('What',`<input name="desc" value="${esc(t.desc)}" placeholder="e.g. Iced latte" autocomplete="off">`)+
-      F('Envelope',`<select name="envId">${t.costId&&!t.envId?opt('','— planned payment —',''):''}${envs.map(e=>opt(e.id,(e.emoji?e.emoji+' ':'')+e.name+(e.isSavings?' (debt repayment)':''),t.envId||(t.costId?'':(envs.find(x=>x.id===lastEnv)||envs.find(x=>x.daily)||envs.find(x=>!x.fixed)||{}).id))).join('')}</select>`)+
-      F('Paid with',`<select name="accountId">${accOpts(t.accountId)}</select>`)+dt;
+      F('Envelope',`<select name="envId">${t.costId&&!t.envId?opt('','— planned payment —',''):''}${envs.map(e=>opt(e.id,(e.emoji?e.emoji+' ':'')+e.name+(e.isSavings?' (not deducted)':''),t.envId||(t.costId?'':(envs.find(x=>x.id===lastEnv)||envs.find(x=>x.daily)||envs.find(x=>!x.fixed)||{}).id))).join('')}</select>`)+
+      F('<span class="paidlbl">Paid with</span>',`<select name="accountId">${accOpts(t.accountId)}</select>`)+
+      `<div class="field savedto" style="display:none"><label>Saved to</label><select name="toAccountId">${accOpts(t.toAccountId||lastSaveTo||(S.accounts.find(a=>a.id==='locked')||S.accounts.find(isSavAcc)||{}).id)}</select></div>`+dt;
   }else if(type==='income'){
     const rec=received();const incs=S.incomes.filter(i=>!rec.has(i.id)||i.id===t.incomeId);
     fields=F('What',`<input name="desc" value="${esc(t.desc)}" placeholder="e.g. Barista pay" autocomplete="off">`)+
       F('Into',`<select name="accountId">${accOpts(t.accountId)}</select>`)+
       F('Expected item',`<select name="incomeId">${opt('','— none —',t.incomeId)}${incs.map(i=>opt(i.id,i.name+' ('+dShort(i.date)+')',t.incomeId)).join('')}</select>`)+dt;
   }else if(type==='transfer'){
-    const save=t._save||(isNew?false:savingsFlowPHP(t)>0);
+    const save=false;
     fields=F('Note',`<input name="desc" value="${esc(t.desc)}" placeholder="${save?'e.g. Monthly savings':'e.g. ATM withdrawal'}" autocomplete="off">`)+
       F('From',`<select name="accountId">${accOpts(t.accountId,save?(a=>a.kind==='spending'):undefined)}</select>`)+
       F('To',`<select name="toAccountId">${accOpts(t.toAccountId||(save?S.accounts.find(a=>a.kind==='savings')?.id:'cash'),save?(a=>a.kind==='savings'):undefined)}</select>`)+dt;
@@ -386,9 +477,9 @@ function txSheet(type,t){
   }else if(type==='adjust'){fields=F('Account',`<select name="accountId">${accOpts(t.accountId)}</select>`)+dt}
   const title=isNew?'Add':'Edit';
   openSheet(title,`${isNew&&!t.incomeId&&!t.costId&&['expense','income','transfer'].includes(type)?`<div class="seg">${segs.map(([k,l])=>`<button type="button" class="${k===segKey?'on':''}" data-act="seg" data-v="${k}">${l}</button>`).join('')}</div>`:''}
-   ${type==='transfer'&&t._save?'<div class="note" style="margin:0 4px 8px">Moves money from a spending account to a savings account. Counts toward your Savings & debt envelope.</div>':''}
-   ${type==='transfer'&&!t._save&&isNew?'<div class="note" style="margin:0 4px 8px">For ATM withdrawals, GCash↔cash swaps, and moving money between accounts. Not spending.</div>':''}
-   <form data-form="tx" data-id="${t.id||''}" data-type="${type}" ${t._save?'data-save="1"':''}>
+   ${t.incomeId&&isNew?'<div class="note" style="margin:0 4px 8px">Change the amount and date to what you actually received.</div>':''}
+   ${type==='transfer'&&isNew?'<div class="note" style="margin:0 4px 8px">Moving money between accounts is not spending. Moving into Piggy bank or Maya counts as savings.</div>':''}
+   <form data-form="tx" data-id="${t.id||''}" data-type="${type}">
    <div class="amt"><input name="amount" inputmode="decimal" placeholder="0" value="${t.amount===''?'':Math.abs(t.amount)}" ${isNew?'autofocus':''} required autocomplete="off"><small class="calcres">${type==='adjust'?'change (+/−)':'amount'}</small></div><div class="ops">${['+','−','×','÷','(',')','C'].map(o=>`<button type="button" data-op="${o}">${o}</button>`).join('')}</div>
    <div class="card">${fields}</div>
    ${t.costId?`<input type="hidden" name="costId" value="${t.costId}">`:''}${t.wishId?`<input type="hidden" name="wishId" value="${t.wishId}">`:''}${t.debtId&&type==='income'?`<input type="hidden" name="debtId" value="${t.debtId}">`:''}
@@ -396,14 +487,17 @@ function txSheet(type,t){
    ${isNew?'':`<button type="button" class="btns btnd" data-act="delTx" data-v="${t.id}">Delete</button>`}
    </form>`);
   if(type==='adjust'&&t.amount<0)$('#sheet-root [name=amount]').value=t.amount;
+  syncSavedTo();
 }
+function syncSavedTo(){const sel=$('#sheet-root [name=envId]'),box=$('#sheet-root .savedto');if(!sel||!box)return;const sv=!!envById(sel.value)?.isSavings;box.style.display=sv?'':'none';const l=$('#sheet-root .paidlbl');if(l)l.textContent=sv?'From':'Paid with'}
+document.addEventListener('change',e=>{if(e.target.name==='envId'&&e.target.closest('#sheet-root'))syncSavedTo()});
 function saveTx(form){
   const fd=Object.fromEntries(new FormData(form));const type=form.dataset.type,id=form.dataset.id;
   let amount=num(fd.amount);if(type!=='adjust')amount=Math.abs(amount);
   if(!amount){toast('Enter an amount');return}
   const t=id?S.tx.find(x=>x.id===id):{id:uid(),type};
   Object.assign(t,{amount,date:fd.date||todayISO(),time:fd.time||'',desc:(fd.desc||'').trim(),accountId:fd.accountId});
-  if(type==='expense'){t.envId=fd.envId||null;if(fd.costId)t.costId=fd.costId;if(fd.wishId)t.wishId=fd.wishId}
+  if(type==='expense'){t.envId=fd.envId||null;if(fd.costId)t.costId=fd.costId;if(fd.wishId)t.wishId=fd.wishId;if(envById(t.envId)?.isSavings){t.toAccountId=fd.toAccountId;lastSaveTo=t.toAccountId}else delete t.toAccountId}
   if(type==='transfer'){t.toAccountId=fd.toAccountId;if(t.toAccountId===t.accountId){toast('Pick two different accounts');return}}
   if(type==='income'){t.incomeId=fd.incomeId||null;const inc=S.incomes.find(i=>i.id===t.incomeId);t.debtId=inc?.debtId||fd.debtId||null;if(!t.desc&&inc)t.desc=inc.name}
   if(type==='debtpay'){t.debtId=fd.debtId;if(fd.costId)t.costId=fd.costId}
@@ -411,12 +505,12 @@ function saveTx(form){
   if(type==='expense'){lastAcc=t.accountId;if(t.envId&&!envById(t.envId)?.fixed)lastEnv=t.envId}
   const wasLogged=!id&&type!=='adjust'&&!logDays().has(t.date);
   save();closeSheet();derive();
-  if(type==='expense'&&t.envId){const e=envById(t.envId),m=mk(t.date);const a=avail(e,m);if(a<-0.5&&!e.isSavings){render();coverSheet(e,m,-a);return}}
-  render();if(wasLogged&&t.date===todayISO())toast('⭐ +1 stamp');else if(savingsFlowPHP(t)>=1000)toast(`⭐ +${Math.floor(savingsFlowPHP(t)/1000)} stamps`);else toast('Saved');
+  if(type==='expense'&&t.envId){const e=envById(t.envId),m=mk(t.date);const a=avail(e,m);if(a<-0.5&&!e.isSavings&&!e.isDebt&&!e.isOthers){render();coverSheet(e,m,-a);return}}
+  render();if(wasLogged&&t.date===todayISO())toast('⭐ +1 stamp');else if(type==='expense'&&(envById(t.envId)?.isSavings||envById(t.envId)?.isDebt)&&t.amount>=1000)toast(`⭐ +${Math.floor(t.amount/1000)} stamps`);else toast('Saved');
 }
 function coverSheet(e,m,over){
-  const others=activeEnvs(m).filter(x=>x.id!==e.id&&!x.isSavings&&!x.fixed&&avail(x,m)>0.5);
-  const sav=S.accounts.filter(a=>a.kind==='savings'),sp=S.accounts.filter(a=>a.kind==='spending');
+  const others=activeEnvs(m).filter(x=>x.id!==e.id&&!x.isSavings&&!x.isDebt&&!x.fixed&&avail(x,m)>0.5);
+  const sav=liveAccs().filter(isSavAcc),sp=liveAccs().filter(isSpendAcc);
   openSheet('Over budget',`<div class="card pad"><div class="t"><b>${esc(e.emoji||'')} ${esc(e.name)}</b> is over by <b class="neg">${money(over,e.currency)}</b> for ${mLabel(m,1)}.</div><div class="sub" style="margin-top:4px">How do you want to cover it?</div></div>
   <h2>Recommended</h2><form class="card opt rec" data-form="coverMove" data-env="${e.id}" data-m="${m}">
    <div class="pad" style="padding-bottom:4px"><b>Move from another envelope</b><div class="sub">You choose what to give up this month. Savings stay untouched.</div></div>
@@ -430,15 +524,15 @@ function coverSheet(e,m,over){
 }
 function envSheet(id){
   const e=envById(id),m=UI.tab==='budget'?UI.month:mk(todayISO());
-  const txs=S.tx.filter(t=>mk(t.date)===m&&(t.envId===id||t.coverEnvId===id||(e.isSavings&&savingsFlowPHP(t)!==0))).sort((a,b)=>b.date.localeCompare(a.date));
+  const txs=S.tx.filter(t=>mk(t.date)===m&&(t.envId===id||t.coverEnvId===id||false)).sort((a,b)=>b.date.localeCompare(a.date));
   const mv=S.moves.filter(x=>x.month===m&&(x.to===id||x.from===id));
   const L=(l,v,c='')=>`<div class="row"><div class="main">${l}</div><div class="r num ${c}">${v}</div></div>`;
   openSheet(e.name,`<div class="card">
-   ${L(e.isSavings?'Target this month':'Budget this month',`<form data-form="envBudget" data-id="${id}" data-m="${m}" style="display:flex;gap:6px;justify-content:flex-end"><input name="b" inputmode="decimal" value="${budgetOf(e,m)}" style="width:110px;text-align:right;border:0;background:var(--fill);border-radius:8px;padding:6px 8px"><button class="btn">Set</button></form>`)}
+   ${e.isOthers?L('Leftover this month',money(budgetOf(e,m),e.currency)):L('Budget this month',`<form data-form="envBudget" data-id="${id}" data-m="${m}" style="display:flex;gap:6px;justify-content:flex-end"><input name="b" inputmode="decimal" value="${budgetOf(e,m)}" style="width:110px;text-align:right;border:0;background:var(--fill);border-radius:8px;padding:6px 8px"><button class="btn">Set</button></form>`)}
    ${L('Rolled over from last month',money(carryOf(e,m),e.currency))}
    ${L('Moved in / out',money((D.moves[m+'|'+id]||0)+(D.cover[m+'|'+id]||0),e.currency))}
-   ${L(e.isSavings?'Deposited (incl. debt payments)':'Spent',money(spentOf(e,m),e.currency))}
-   ${L(e.isSavings?'Still to deposit':'Left',money(avail(e,m),e.currency),avail(e,m)<0&&!e.isSavings?'neg':'')}
+   ${L(e.isSavings?'Saved':'Spent',money(spentOf(e,m),e.currency))}
+   ${L(e.isSavings?'Still to save':'Left',money(avail(e,m),e.currency),avail(e,m)<0&&!e.isSavings?'neg':'')}
   </div><div class="note">Default monthly: ${money(e.budget,e.currency)}. “Set” changes only ${mLabel(m,1)}.</div>
   <h2>${mLabel(m,1)}</h2><div class="card">${txs.map(txLine).join('')}${mv.map(x=>`<div class="row"><div class="main"><div class="t">Moved ${x.to===id?'from '+esc(envById(x.from)?.name||'?'):'to '+esc(envById(x.to)?.name||'?')}</div><div class="s">${dShort(x.date)}</div></div><div class="r num">${x.to===id?'+':'−'}${money(x.amount,e.currency)}</div><button class="btn btnd" style="font-size:14px;margin-left:8px" data-act="delMove" data-v="${x.id}">Undo</button></div>`).join('')||(!txs.length?'<div class="empty">Nothing yet</div>':'')}</div>
   <button class="btns" data-act="editEnt" data-k="env" data-v="${id}">Edit envelope</button>`);
@@ -452,7 +546,7 @@ function moveSheet(){
   </div><button class="btnp">Move</button></form>`)}
 function balancesSheet(){
   openSheet('Update balances',`<div class="note" style="margin:0 4px 10px">Check your bank apps and wallet, then type what's really there. The app records the difference.</div><form data-form="balances"><div class="card">
-  ${S.accounts.map(a=>F(esc(a.name),`<input name="${a.id}" inputmode="decimal" value="${Math.round((D.bal[a.id]||0)*100)/100}">`)).join('')}</div><button class="btnp">Save balances</button></form>`)}
+  ${liveAccs().map(a=>F(esc(a.name),`<input name="${a.id}" inputmode="decimal" value="${Math.round((D.bal[a.id]||0)*100)/100}">`)).join('')}</div><button class="btnp">Save balances</button></form>`)}
 function buySheet(w,anyway){
   const m=mk(todayISO()),te=treatEnv(m),cost=wishCost(w);
   openSheet(anyway?'Bought anyway':'Get it',`<div class="card pad"><b>${esc(w.name)}</b><div class="sub">${anyway?'Logged honestly. No stamps used, and it comes out of '+(te?esc(te.name):'your budget')+'.':`Uses ⭐ ${cost} stamps. Paid from ${te?esc(te.name):'your budget'}.`}</div></div>
@@ -467,9 +561,9 @@ const ENT={
  income:{list:'incomes',title:'Expected income',fields:()=>[['name','Name'],['amount','Amount','num'],['currency','Currency','sel',[['PHP','₱ PHP'],['KRW','₩ KRW']]],['date','Expected','date'],['accountId','Goes to','acc'],['kind','Type','sel',[['regular','Regular'],['tranche','Project tranche'],['loan','Loan']]],['debtId','Loan from','sel',[['','— not a loan —'],...S.debts.map(d=>[d.id,d.name])]]],blank:()=>({name:'',amount:0,currency:'PHP',date:todayISO(),accountId:'bpi',kind:'regular',debtId:''})},
  cost:{list:'costs',title:'Planned payment',fields:()=>[['name','Name'],['amount','Amount (₱)','num'],['date','Planned date','date'],['group','Group'],['note','Note'],['debtId','Pays off debt','sel',[['','— no —'],...S.debts.map(d=>[d.id,d.name])]]],blank:()=>({name:'',amount:0,date:todayISO(),group:'Other',note:'',debtId:''})},
  debt:{list:'debts',title:'Debt',fields:()=>[['name','Name'],['start','Owed at start (₱)','num'],['due','Due date','date'],['note','Note']],blank:()=>({name:'',start:0,due:'',note:''})},
- goal:{list:'goals',title:'Goal',fields:()=>[['name','Name'],['target','Target (₱)','num'],['accountId','Kept in','acc']],blank:()=>({name:'',target:0,accountId:S.accounts.find(a=>a.kind==='savings')?.id})},
- acc:{list:'accounts',title:'Account',fields:()=>[['name','Name'],['currency','Currency','sel',[['PHP','₱ PHP'],['KRW','₩ KRW']]],['kind','Type','sel',[['spending','Spending'],['savings','Savings']]],['start','Starting balance','num']],blank:()=>({name:'',currency:'PHP',kind:'spending',start:0}),note:'To fix a balance, use “Update balances” instead of changing the starting balance.'},
- wish:{list:'wishlist',title:'Wish',fields:()=>[['name','Name'],['price','Price (₱ each)','num'],['qty','How many','num'],['target','Want it by','month'],['note','Note']],blank:()=>({name:'',price:0,qty:1,target:'',note:''})},
+ goal:{list:'goals',title:'Goal',fields:()=>[['name','Name'],['target','Target (₱)','num'],['accountId','Kept in','acc']],blank:()=>({name:'',target:0,accountId:S.accounts.find(isSavAcc)?.id})},
+ acc:{list:'accounts',title:'Account',fields:()=>[['name','Name'],['currency','Currency','sel',[['PHP','₱ PHP'],['KRW','₩ KRW']]],['kind','Type','sel',[['spending','Spending'],['savings','Savings'],['both','Spending + savings']]],['start','Starting balance','num'],['archived','Hide account','chk']],blank:()=>({name:'',currency:'PHP',kind:'spending',start:0}),note:'To fix a balance, use “Update balances” instead of changing the starting balance.'},
+ wish:{list:'wishlist',title:'Wish',fields:()=>[['name','Name'],['price','Price (₱ each)','num'],['stamps','Stamps (0 = auto)','num'],['qty','How many','num'],['target','Deadline','month'],['note','Note']],blank:()=>({name:'',price:0,stamps:0,qty:1,target:'',note:''}),note:'Auto stamps = 1 per ₱100 of the price.'},
  env:{list:'envelopes',title:'Envelope',fields:()=>[['emoji','Emoji'],['name','Name'],['budget','Default monthly','num'],['phase','Used in','sel',[['PH','Philippines (₱)'],['KR','Korea (₩)']]],['fixed','Fixed bill','chk'],['daily','Show per-day amount','chk'],['archived','Hide (archive)','chk']],blank:()=>({emoji:'',name:'',budget:0,phase:phaseOf(UI.month),fixed:false,daily:false,archived:false})},
 };
 function entSheet(k,id){
@@ -502,6 +596,8 @@ function settingsSheet(){
    ${F('₩1 in ₱',`<input name="krwToPhp" inputmode="decimal" value="${S.settings.krwToPhp}">`)}
    ${F('Korea budget starts',`<input type="month" name="koreaStart" value="${S.settings.koreaStart>'2090'?'':S.settings.koreaStart}">`)}
    ${F('Budget started',`<input type="month" name="startMonth" value="${S.settings.startMonth}">`)}
+   ${F('Monthly savings (₱)',`<input name="savePH" inputmode="decimal" value="${num((S.settings.saveTarget||{}).PH)}">`)}
+   ${F('Monthly savings (₩)',`<input name="saveKR" inputmode="decimal" value="${num((S.settings.saveTarget||{}).KR)}">`)}
   </div><button class="btnp">Save settings</button></form>
   <h2>Backup</h2><div class="card"><button class="row chev" data-act="export"><div class="main"><div class="t">Export backup</div><div class="s">Save the file to iCloud Drive or Files</div></div></button><button class="row chev" data-act="import"><div class="main"><div class="t">Import backup</div><div class="s">Replaces everything on this phone</div></div></button></div>
   <h2>Danger zone</h2><div class="card"><button class="row btnd" data-act="reset">Erase all data</button></div>
@@ -515,19 +611,24 @@ async function doExport(){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();render();toast('Backup downloaded')}
 function doImport(file){
   const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d||!Array.isArray(d.envelopes)||!Array.isArray(d.accounts))throw 0;
-    if(S&&!confirm('Replace everything on this phone with this file?'))return;S=normalize(d);UI.month=mk(todayISO());closeSheet();commit();toast('Imported')}catch(e){alert('That file is not a Pitaka setup or backup.')}};r.readAsText(file)}
+    if(S&&!confirm('Replace everything on this phone with this file?'))return;S=migrate(normalize(d));UI.month=mk(todayISO());closeSheet();commit();toast('Imported')}catch(e){alert('That file is not a Pitaka setup or backup.')}};r.readAsText(file)}
 
 /* ---------- events ---------- */
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el)return;const a=el.dataset.act,v=el.dataset.v;
   switch(a){
-   case'tab':UI.tab=v;if(v==='budget')UI.month=mk(todayISO());if(v==='today')UI.logMonth=mk(todayISO());render();scrollTo(0,0);break;
-   case'lPrev':UI.logMonth=addM(UI.logMonth,-1);render();break;
-   case'lNext':UI.logMonth=addM(UI.logMonth,1);render();break;
+   case'tab':UI.tab=v;if(v==='budget')UI.month=mk(todayISO());if(v==='today'){UI.logMonth=mk(todayISO());UI.logDay=null}render();scrollTo(0,0);break;
+   case'lPrev':UI.logMonth=addM(UI.logMonth,-1);UI.logDay=null;render();break;
+   case'lNext':UI.logMonth=addM(UI.logMonth,1);UI.logDay=null;render();break;
    case'logAll':UI.logAll=v==='1';render();break;
    case'op':break;
+   case'sec':S.settings.sec=S.settings.sec||{};S.settings.sec[v]=S.settings.sec[v]===false;commit();break;
+   case'hide':S.settings.hide=!S.settings.hide;commit();break;
+   case'noBills':S.settings.noBills=v==='1';commit();break;
+   case'day':UI.logDay=UI.logDay===v?null:v;render();break;
+   case'swDel':{const E=ENT[el.dataset.k];S[E.list]=S[E.list].filter(x=>x.id!==v);commit();toast('Deleted');break}
    case'add':txSheet('expense');break;
-   case'seg':{const map={expense:['expense'],income:['income'],save:['transfer',1],transfer:['transfer']};const[tp,sv]=map[v];const t={type:tp,date:todayISO(),time:nowTime(),amount:$('#sheet-root [name=amount]')?.value||'',desc:'',accountId:tp==='expense'?(lastAcc||'cash'):'bpi',_save:!!sv};txSheet(tp,t);e.preventDefault();break}
+   case'seg':{const tp={expense:'expense',income:'income',transfer:'transfer'}[v],sv=0;const t={type:tp,date:todayISO(),time:nowTime(),amount:$('#sheet-root [name=amount]')?.value||'',desc:'',accountId:tp==='expense'?(lastAcc||'cash'):'bpi',_save:!!sv};txSheet(tp,t);e.preventDefault();break}
    case'editTx':{const t=S.tx.find(x=>x.id===v);if(t)txSheet(t.type,t);break}
    case'delTx':if(confirm('Delete this entry?')){S.tx=S.tx.filter(x=>x.id!==v);closeSheet();commit()}break;
    case'close':closeSheet();break;
@@ -566,21 +667,60 @@ document.addEventListener('submit',e=>{
    case'move':{const amt=num(fd.amount);if(!amt||fd.from===fd.to){toast('Pick two envelopes and an amount');break}S.moves.push({id:uid(),month:f.dataset.m,from:fd.from,to:fd.to,amount:amt,date:todayISO()});closeSheet();commit();toast('Moved');break}
    case'coverMove':{const amt=num(fd.amount);if(!amt)break;S.moves.push({id:uid(),month:f.dataset.m,from:fd.from,to:f.dataset.env,amount:amt,date:todayISO()});closeSheet();commit();toast('Covered. Savings untouched.');break}
    case'coverSave':{const amt=num(fd.amount);if(!amt)break;S.tx.push({id:uid(),type:'transfer',amount:amt,date:todayISO(),time:nowTime(),desc:'Savings dip',accountId:fd.from,toAccountId:fd.to,coverEnvId:f.dataset.env});closeSheet();commit();toast('Taken from savings');break}
-   case'balances':{const t=todayISO();let n=0;for(const a of S.accounts){const want=num(fd[a.id]),diff=Math.round((want-(D.bal[a.id]||0))*100)/100;if(Math.abs(diff)>=0.01){S.tx.push({id:uid(),type:'adjust',amount:diff,date:t,time:'',desc:'',accountId:a.id});n++}}closeSheet();commit();toast(n?`Updated ${n} account${n>1?'s':''}`:'No changes');break}
+   case'balances':{const t=todayISO();let n=0;for(const a of liveAccs()){const want=num(fd[a.id]),diff=Math.round((want-(D.bal[a.id]||0))*100)/100;if(Math.abs(diff)>=0.01){S.tx.push({id:uid(),type:'adjust',amount:diff,date:t,time:'',desc:'',accountId:a.id});n++}}closeSheet();commit();toast(n?`Updated ${n} account${n>1?'s':''}`:'No changes');break}
    case'buy':{const w=S.wishlist.find(x=>x.id===f.dataset.id);const price=num(fd.price),te=treatEnv(mk(fd.date||todayISO()));
      S.tx.push({id:uid(),type:'expense',amount:Math.round(conv(price,'PHP',accCur(fd.accountId))),date:fd.date||todayISO(),time:'',desc:w.name,accountId:fd.accountId,envId:te?.id||null,wishId:w.id});
      if(!f.dataset.anyway)S.stampSpends.push({id:uid(),wishId:w.id,n:wishCost(w),date:todayISO()});
      w.qty=Math.max(0,(w.qty||1)-1);if(w.qty===0){w.bought=true;w.boughtDate=fd.date;w.boughtPrice=price}
      closeSheet();commit();derive();if(te&&avail(te,mk(fd.date||todayISO()))<-0.5){coverSheet(te,mk(fd.date||todayISO()),-avail(te,mk(fd.date||todayISO())))}else toast(f.dataset.anyway?'Logged':'🎉 Enjoy it!');break}
-   case'settings':{S.settings.krwToPhp=num(fd.krwToPhp)||0.0463;S.settings.koreaStart=fd.koreaStart||'2099-01';S.settings.startMonth=fd.startMonth||S.settings.startMonth;closeSheet();commit();toast('Saved');break}
+   case'settings':{S.settings.saveTarget={PH:num(fd.savePH),KR:num(fd.saveKR)};S.settings.krwToPhp=num(fd.krwToPhp)||0.0463;S.settings.koreaStart=fd.koreaStart||'2099-01';S.settings.startMonth=fd.startMonth||S.settings.startMonth;closeSheet();commit();toast('Saved');break}
   }
 });
+
+/* ---------- pace chart ---------- */
+function paceChart(m){
+  const di=dailyInfo(m),cur=di.cur,t=todayISO(),n=di.n;
+  const tot=sum(di.envs,e=>budgetOf(e,m)+carryOf(e,m)+(D.moves[m+'|'+e.id]||0)+(D.cover[m+'|'+e.id]||0));
+  const last=m<mk(t)?n:Number(t.slice(8));const act=[0];let c=0;
+  for(let d=1;d<=last;d++){c+=di.spent[m+'-'+pad(d)]||0;act.push(c)}
+  const W=340,H=170,L=8,Rr=8,T=10,B=20,ymax=Math.max(tot,c,1)*1.12;
+  const X=d=>L+(W-L-Rr)*d/n,Y=v=>T+(H-T-B)*(1-v/ymax);
+  const pace=d=>tot*d/n,diff=c-pace(last);
+  const path=act.map((v,d)=>(d?'L':'M')+X(d).toFixed(1)+' '+Y(v).toFixed(1)).join('');
+  window._pace={n,act,tot,cur,m,X,W};
+  const ticks=[1,Math.round(n/2),n].map((d,k)=>`<text x="${X(d)}" y="${H-5}" text-anchor="${['start','middle','end'][k]}" font-size="10" fill="var(--text2)">${MN[Number(m.slice(5))-1]} ${d}</text>`).join('');
+  return sec('pace','Spending pace',`<div class="card chart">
+   <div class="legend"><span><i style="border-color:var(--blue)"></i>Spent so far</span><span><i style="border-color:var(--text3);border-top-style:dashed"></i>On-budget pace</span></div>
+   <div class="tip"></div>
+   <svg viewBox="0 0 ${W} ${H}" data-chart="pace" role="img" aria-label="Cumulative day-to-day spending versus budget pace">
+    <line x1="${L}" y1="${Y(0)}" x2="${W-Rr}" y2="${Y(0)}" stroke="var(--sep)"/>
+    <line x1="${X(0)}" y1="${Y(0)}" x2="${X(n)}" y2="${Y(tot)}" stroke="var(--text3)" stroke-width="2" stroke-dasharray="5 4"/>
+    <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${X(last)}" cy="${Y(c)}" r="4" fill="var(--blue)" stroke="var(--card)" stroke-width="2"/>
+    <line class="xh" x1="0" x2="0" y1="${T}" y2="${Y(0)}" stroke="var(--text3)" stroke-width="1" style="display:none"/>
+    ${ticks}</svg>
+   <div class="sub" style="padding:4px 4px 2px">${diff>0.5?`<b>${money(diff,cur)} over</b> the pace for day ${last}.`:`<b>${money(-diff,cur)} under</b> the pace for day ${last}. ✓`} </div></div>`)}
+function chartHover(e){
+  const svg=e.target.closest('svg[data-chart=pace]');if(!svg||!window._pace)return;const P=window._pace,r=svg.getBoundingClientRect();
+  const x=((e.touches?e.touches[0].clientX:e.clientX)-r.left)/r.width*P.W;let d=Math.round((x-8)/(P.W-16)*P.n);d=Math.max(1,Math.min(P.n,d));
+  const tip=svg.parentNode.querySelector('.tip'),xh=svg.querySelector('.xh');const px=P.X(d);
+  xh.setAttribute('x1',px);xh.setAttribute('x2',px);xh.style.display='';
+  tip.style.display='block';tip.style.left=(px/P.W*r.width+12)+'px';
+  tip.textContent=`${MN[Number(P.m.slice(5))-1]} ${d}: `+(d<P.act.length?`spent ${money(P.act[d],P.cur)} · `:'')+`pace ${money(P.tot*d/P.n,P.cur)}`}
+document.addEventListener('pointermove',chartHover);document.addEventListener('pointerdown',chartHover);
+
+/* ---------- swipe to delete ---------- */
+let sw=null,swMoved=false;
+document.addEventListener('touchstart',e=>{const c=e.target.closest('.swc');document.querySelectorAll('.swc.open').forEach(o=>{if(o!==c){o.classList.remove('open');o.style.transform=''}});if(!c)return;sw={c,x:e.touches[0].clientX,y:e.touches[0].clientY,dx:0,lock:null,base:c.classList.contains('open')?-88:0};swMoved=false},{passive:true});
+document.addEventListener('touchmove',e=>{if(!sw)return;const dx=e.touches[0].clientX-sw.x,dy=e.touches[0].clientY-sw.y;if(sw.lock===null&&(Math.abs(dx)>8||Math.abs(dy)>8))sw.lock=Math.abs(dx)>Math.abs(dy);if(!sw.lock)return;swMoved=true;sw.dx=dx;const v=Math.max(-88,Math.min(0,sw.base+dx));sw.c.style.transition='none';sw.c.style.transform=`translateX(${v}px)`},{passive:true});
+document.addEventListener('touchend',()=>{if(!sw)return;const c=sw.c;c.style.transition='';if(sw.lock){const open=sw.base+sw.dx<-44;c.classList.toggle('open',open);c.style.transform=open?'translateX(-88px)':''}sw=null;setTimeout(()=>{swMoved=false},400)},{passive:true});
+document.addEventListener('click',e=>{if(swMoved&&e.target.closest('.swc')){e.stopPropagation();e.preventDefault();swMoved=false}},true);
 
 /* ---------- calculator ---------- */
 function opPress(o){const inp=$('#sheet-root [name=amount]');if(!inp)return;
   if(o==='C'){inp.value='';}else{const a=inp.selectionStart??inp.value.length,b=inp.selectionEnd??inp.value.length;inp.value=inp.value.slice(0,a)+o+inp.value.slice(b);try{inp.setSelectionRange(a+1,a+1)}catch(e){}}
   calcShow(inp)}
-function calcShow(inp){const r=$('#sheet-root .calcres');if(!r)return;const v=inp.value;r.textContent=/[+\-−×÷*/()]/.test(v.replace(/^-/,''))?'= '+money(num(v),''):'amount'}
+function calcShow(inp){const r=$('#sheet-root .calcres');if(!r)return;const v=inp.value;r.textContent=/[+\-−×÷*/()]/.test(v.replace(/^-/,''))?'= '+(Math.round(num(v)*100)/100).toLocaleString('en-US'):'amount'}
 document.addEventListener('touchstart',e=>{const b=e.target.closest('[data-op]');if(b){e.preventDefault();opPress(b.dataset.op)}},{passive:false});
 document.addEventListener('mousedown',e=>{const b=e.target.closest('[data-op]');if(b){e.preventDefault();opPress(b.dataset.op)}});
 document.addEventListener('input',e=>{if(e.target.name==='amount'&&e.target.closest('#sheet-root .amt'))calcShow(e.target)});
